@@ -8,7 +8,7 @@ use helix_stdx::rope::RopeSliceExt;
 
 use crate::{
     chars::char_is_line_ending,
-    doc_formatter::{DocumentFormatter, TextFormat},
+    doc_formatter::{DocumentFormatter, ElasticTabstopWidths, TextFormat},
     graphemes::{ensure_grapheme_boundary_prev, grapheme_width},
     line_ending::line_end_char_index,
     text_annotations::TextAnnotations,
@@ -156,11 +156,17 @@ pub fn visual_offset_from_block(
     anchor: usize,
     pos: usize,
     text_fmt: &TextFormat,
+    elastic_tabstop_widths: &ElasticTabstopWidths,
     annotations: &TextAnnotations,
 ) -> (Position, usize) {
     let mut last_pos = Position::default();
-    let mut formatter =
-        DocumentFormatter::new_at_prev_checkpoint(text, text_fmt, annotations, anchor);
+    let mut formatter = DocumentFormatter::new_at_prev_checkpoint(
+        text,
+        text_fmt,
+        elastic_tabstop_widths,
+        annotations,
+        anchor,
+    );
     let block_start = formatter.next_char_pos();
 
     while let Some(grapheme) = formatter.next() {
@@ -175,8 +181,15 @@ pub fn visual_offset_from_block(
 
 /// Returns the height of the given text when softwrapping
 pub fn softwrapped_dimensions(text: RopeSlice, text_fmt: &TextFormat) -> (usize, u16) {
-    let last_pos =
-        visual_offset_from_block(text, 0, usize::MAX, text_fmt, &TextAnnotations::default()).0;
+    let last_pos = visual_offset_from_block(
+        text,
+        0,
+        usize::MAX,
+        text_fmt,
+        &ElasticTabstopWidths::default(),
+        &TextAnnotations::default(),
+    )
+    .0;
     if last_pos.row == 0 {
         (1, last_pos.col as u16)
     } else {
@@ -197,11 +210,17 @@ pub fn visual_offset_from_anchor(
     anchor: usize,
     pos: usize,
     text_fmt: &TextFormat,
+    elastic_tabstop_widths: &ElasticTabstopWidths,
     annotations: &TextAnnotations,
     max_rows: usize,
 ) -> Result<(Position, usize), VisualOffsetError> {
-    let mut formatter =
-        DocumentFormatter::new_at_prev_checkpoint(text, text_fmt, annotations, anchor);
+    let mut formatter = DocumentFormatter::new_at_prev_checkpoint(
+        text,
+        text_fmt,
+        elastic_tabstop_widths,
+        annotations,
+        anchor,
+    );
     let mut anchor_line = None;
     let mut found_pos = None;
     let mut last_pos = Position::default();
@@ -361,13 +380,20 @@ pub fn char_idx_at_visual_offset(
     mut row_offset: isize,
     column: usize,
     text_fmt: &TextFormat,
+    elastic_tabstop_widths: &ElasticTabstopWidths,
     annotations: &TextAnnotations,
 ) -> (usize, usize) {
     let mut pos = anchor;
     // convert row relative to visual line containing anchor to row relative to a block containing anchor (anchor may change)
     loop {
-        let (visual_pos_in_block, block_char_offset) =
-            visual_offset_from_block(text, anchor, pos, text_fmt, annotations);
+        let (visual_pos_in_block, block_char_offset) = visual_offset_from_block(
+            text,
+            anchor,
+            pos,
+            text_fmt,
+            elastic_tabstop_widths,
+            annotations,
+        );
         row_offset += visual_pos_in_block.row as isize;
         anchor = block_char_offset;
         if row_offset >= 0 {
@@ -391,6 +417,7 @@ pub fn char_idx_at_visual_offset(
         row_offset as usize,
         column,
         text_fmt,
+        elastic_tabstop_widths,
         annotations,
     )
 }
@@ -412,10 +439,16 @@ pub fn char_idx_at_visual_block_offset(
     row: usize,
     column: usize,
     text_fmt: &TextFormat,
+    elastic_tabstop_widths: &ElasticTabstopWidths,
     annotations: &TextAnnotations,
 ) -> (usize, usize) {
-    let mut formatter =
-        DocumentFormatter::new_at_prev_checkpoint(text, text_fmt, annotations, anchor);
+    let mut formatter = DocumentFormatter::new_at_prev_checkpoint(
+        text,
+        text_fmt,
+        elastic_tabstop_widths,
+        annotations,
+        anchor,
+    );
     let mut last_char_idx = formatter.next_char_pos();
     let mut found_non_virtual_on_row = false;
     let mut last_row = 0;
@@ -559,26 +592,27 @@ mod test {
     fn test_visual_off_from_block() {
         let text = Rope::from("ḧëḷḷö\nẅöṛḷḋ");
         let slice = text.slice(..);
+        let elastic_tabstop_widths = ElasticTabstopWidths::default();
         let annot = TextAnnotations::default();
         let text_fmt = TextFormat::default();
         assert_eq!(
-            visual_offset_from_block(slice, 0, 0, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 0, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (0, 0).into()
         );
         assert_eq!(
-            visual_offset_from_block(slice, 0, 5, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 5, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (0, 5).into()
         ); // position on \n
         assert_eq!(
-            visual_offset_from_block(slice, 0, 6, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 6, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (1, 0).into()
         ); // position on w
         assert_eq!(
-            visual_offset_from_block(slice, 0, 7, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 7, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (1, 1).into()
         ); // position on o
         assert_eq!(
-            visual_offset_from_block(slice, 0, 10, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 10, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (1, 4).into()
         ); // position on d
 
@@ -586,31 +620,31 @@ mod test {
         let text = Rope::from("今日はいい\n");
         let slice = text.slice(..);
         assert_eq!(
-            visual_offset_from_block(slice, 0, 0, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 0, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (0, 0).into()
         );
         assert_eq!(
-            visual_offset_from_block(slice, 0, 1, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 1, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (0, 2).into()
         );
         assert_eq!(
-            visual_offset_from_block(slice, 0, 2, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 2, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (0, 4).into()
         );
         assert_eq!(
-            visual_offset_from_block(slice, 0, 3, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 3, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (0, 6).into()
         );
         assert_eq!(
-            visual_offset_from_block(slice, 0, 4, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 4, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (0, 8).into()
         );
         assert_eq!(
-            visual_offset_from_block(slice, 0, 5, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 5, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (0, 10).into()
         );
         assert_eq!(
-            visual_offset_from_block(slice, 0, 6, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 6, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (1, 0).into()
         );
 
@@ -618,23 +652,23 @@ mod test {
         let text = Rope::from("a̐éö̲\r\n");
         let slice = text.slice(..);
         assert_eq!(
-            visual_offset_from_block(slice, 0, 0, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 0, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (0, 0).into()
         );
         assert_eq!(
-            visual_offset_from_block(slice, 0, 2, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 2, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (0, 1).into()
         );
         assert_eq!(
-            visual_offset_from_block(slice, 0, 4, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 4, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (0, 2).into()
         );
         assert_eq!(
-            visual_offset_from_block(slice, 0, 7, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 7, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (0, 3).into()
         );
         assert_eq!(
-            visual_offset_from_block(slice, 0, 9, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 9, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (1, 0).into()
         );
 
@@ -643,23 +677,23 @@ mod test {
         let text = Rope::from("किमपि\n");
         let slice = text.slice(..);
         assert_eq!(
-            visual_offset_from_block(slice, 0, 0, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 0, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (0, 0).into()
         );
         assert_eq!(
-            visual_offset_from_block(slice, 0, 2, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 2, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (0, 2).into()
         );
         assert_eq!(
-            visual_offset_from_block(slice, 0, 3, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 3, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (0, 3).into()
         );
         assert_eq!(
-            visual_offset_from_block(slice, 0, 5, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 5, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (0, 5).into()
         );
         assert_eq!(
-            visual_offset_from_block(slice, 0, 6, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 6, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (1, 0).into()
         );
 
@@ -667,15 +701,15 @@ mod test {
         let text = Rope::from("\tHello\n");
         let slice = text.slice(..);
         assert_eq!(
-            visual_offset_from_block(slice, 0, 0, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 0, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (0, 0).into()
         );
         assert_eq!(
-            visual_offset_from_block(slice, 0, 1, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 1, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (0, 4).into()
         );
         assert_eq!(
-            visual_offset_from_block(slice, 0, 2, &text_fmt, &annot).0,
+            visual_offset_from_block(slice, 0, 2, &text_fmt, &elastic_tabstop_widths, &annot).0,
             (0, 5).into()
         );
     }
@@ -816,6 +850,7 @@ mod test {
         let text = Rope::from("foo\nbar");
         let slice = text.slice(..);
         let mut text_fmt = TextFormat::default();
+        let elastic_tabstop_widths = ElasticTabstopWidths::default();
         let annotations = [InlineAnnotation {
             text: "x".repeat(100).into(),
             char_idx: 3,
@@ -829,6 +864,7 @@ mod test {
                 1,
                 0,
                 &text_fmt,
+                &elastic_tabstop_widths,
                 TextAnnotations::default().add_inline_annotations(&annotations, None)
             ),
             (2, 1)
@@ -840,6 +876,7 @@ mod test {
         let text = Rope::from("ḧëḷḷö\nẅöṛḷḋ\nfoo");
         let slice = text.slice(..);
         let mut text_fmt = TextFormat::default();
+        let elastic_tabstop_widths = ElasticTabstopWidths::default();
         for i in 0isize..3isize {
             for j in -2isize..=2isize {
                 if !(0..3).contains(&(i + j)) {
@@ -853,6 +890,7 @@ mod test {
                         j,
                         3,
                         &text_fmt,
+                        &elastic_tabstop_widths,
                         &TextAnnotations::default(),
                     )
                     .0,
@@ -875,6 +913,7 @@ mod test {
                 0,
                 0,
                 &text_fmt,
+                &elastic_tabstop_widths,
                 &TextAnnotations::default(),
             )
             .0,
@@ -887,6 +926,7 @@ mod test {
                 -1,
                 0,
                 &text_fmt,
+                &elastic_tabstop_widths,
                 &TextAnnotations::default(),
             )
             .0,
@@ -899,6 +939,7 @@ mod test {
                 -2,
                 0,
                 &text_fmt,
+                &elastic_tabstop_widths,
                 &TextAnnotations::default(),
             )
             .0,
@@ -911,6 +952,7 @@ mod test {
                 -2,
                 0,
                 &text_fmt,
+                &elastic_tabstop_widths,
                 &TextAnnotations::default(),
             )
             .0,
@@ -924,6 +966,7 @@ mod test {
                 -5,
                 0,
                 &text_fmt,
+                &elastic_tabstop_widths,
                 &TextAnnotations::default(),
             )
             .0,

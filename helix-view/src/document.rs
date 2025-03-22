@@ -5,13 +5,15 @@ use futures_util::future::BoxFuture;
 use futures_util::FutureExt;
 use helix_core::auto_pairs::AutoPairs;
 use helix_core::chars::char_is_word;
-use helix_core::doc_formatter::TextFormat;
+use helix_core::doc_formatter::{ElasticTabstopGroupId, ElasticTabstopWidths, TextFormat};
 use helix_core::encoding::Encoding;
+use helix_core::graphemes::grapheme_width;
 use helix_core::snippets::{ActiveSnippet, SnippetRenderCtx};
 use helix_core::syntax::{Highlight, LanguageServerFeature};
 use helix_core::text_annotations::{InlineAnnotation, Overlay};
 use helix_lsp::util::lsp_pos_to_pos;
 use helix_stdx::faccess::{copy_metadata, readonly};
+use helix_stdx::rope::RopeSliceExt;
 use helix_vcs::{DiffHandle, DiffProviderRegistry};
 use once_cell::sync::OnceCell;
 use thiserror;
@@ -138,6 +140,8 @@ pub struct Document {
     selections: HashMap<ViewId, Selection>,
     view_data: HashMap<ViewId, ViewData>,
     pub active_snippet: Option<ActiveSnippet>,
+
+    pub(crate) elastic_tabstop_widths: ElasticTabstopWidths,
 
     /// Inlay hints annotations for the document, by view.
     ///
@@ -674,6 +678,7 @@ impl Document {
             has_bom,
             text,
             selections: HashMap::default(),
+            elastic_tabstop_widths: ElasticTabstopWidths::default(),
             inlay_hints: HashMap::default(),
             inlay_hints_oudated: false,
             view_data: Default::default(),
@@ -1432,6 +1437,62 @@ impl Document {
             apply_inlay_hint_changes(other_inlay_hints);
             apply_inlay_hint_changes(padding_after_inlay_hints);
         }
+
+        log::warn!("calculating elastic tabstops...");
+        let mut complete_groups = vec![];
+        let mut stack = vec![];
+
+        let mut tabstop = 0;
+        let mut column_after_tabstop = 0;
+
+        let mut row = 0;
+        for grapheme in self.text().slice(..).graphemes() {
+            if grapheme == "\t" {
+                if stack.len() <= tabstop {
+                    stack.push((
+                        ElasticTabstopGroupId {
+                            depth: tabstop,
+                            rows: row..row + 1,
+                        },
+                        0,
+                    ));
+                }
+                let group = &mut stack[tabstop];
+
+                group.0.rows.end = row + 1;
+                group.1 = group.1.max(column_after_tabstop);
+
+                tabstop += 1;
+                column_after_tabstop = 0;
+            }
+
+            if grapheme == "\n" {
+                while stack.len() > tabstop {
+                    complete_groups.push(stack.pop().unwrap());
+                }
+
+                row += 1;
+                tabstop = 0;
+                column_after_tabstop = 0;
+            }
+
+            if grapheme != "\t" && grapheme != "\n" {
+                column_after_tabstop += grapheme_width(&Cow::from(grapheme));
+            }
+        }
+
+        complete_groups.extend(stack.into_iter());
+        complete_groups.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+        log::warn!(
+            "elastic tabstops calculated ({} groups {:#?})",
+            complete_groups.len(),
+            complete_groups
+        );
+
+        self.elastic_tabstop_widths = ElasticTabstopWidths {
+            groups: complete_groups,
+        };
 
         helix_event::dispatch(DocumentDidChange {
             doc: self,

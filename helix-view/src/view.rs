@@ -10,7 +10,7 @@ use crate::{
 
 use helix_core::{
     char_idx_at_visual_offset,
-    doc_formatter::TextFormat,
+    doc_formatter::{ElasticTabstopWidths, TextFormat},
     syntax::Highlight,
     text_annotations::TextAnnotations,
     visual_offset_from_anchor, visual_offset_from_block, Position, RopeSlice, Selection,
@@ -239,6 +239,7 @@ impl View {
         let viewport = self.inner_area(doc);
         let vertical_viewport_end = view_offset.vertical_offset + viewport.height as usize;
         let text_fmt = doc.text_format(viewport.width, None);
+        let elastic_tabstop_widths = self.elastic_tabstop_widths(doc);
         let annotations = self.text_annotations(doc, None);
 
         let (scrolloff_top, scrolloff_bottom) = if CENTERING {
@@ -267,6 +268,7 @@ impl View {
             offset.anchor,
             cursor,
             &text_fmt,
+            &elastic_tabstop_widths,
             &annotations,
             vertical_viewport_end,
         );
@@ -294,8 +296,15 @@ impl View {
             } else {
                 viewport.height as isize - scrolloff_bottom as isize - 1
             };
-            (offset.anchor, offset.vertical_offset) =
-                char_idx_at_visual_offset(doc_text, cursor, -v_off, 0, &text_fmt, &annotations);
+            (offset.anchor, offset.vertical_offset) = char_idx_at_visual_offset(
+                doc_text,
+                cursor,
+                -v_off,
+                0,
+                &text_fmt,
+                &elastic_tabstop_widths,
+                &annotations,
+            );
         }
 
         if text_fmt.soft_wrap {
@@ -309,6 +318,7 @@ impl View {
                         offset.anchor,
                         cursor,
                         &text_fmt,
+                        &elastic_tabstop_widths,
                         &annotations,
                     )
                 })
@@ -372,6 +382,7 @@ impl View {
         let doc_text = doc.text().slice(..);
         let viewport = self.inner_area(doc);
         let text_fmt = doc.text_format(viewport.width, None);
+        let elastic_tabstop_widths = self.elastic_tabstop_widths(doc);
         let annotations = self.text_annotations(doc, None);
         let view_offset = doc.view_offset(self.id);
 
@@ -389,6 +400,7 @@ impl View {
             view_offset.anchor,
             usize::MAX,
             &text_fmt,
+            &elastic_tabstop_widths,
             &annotations,
             visual_height,
         );
@@ -413,6 +425,7 @@ impl View {
 
         let viewport = self.inner_area(doc);
         let text_fmt = doc.text_format(viewport.width, None);
+        let elastic_tabstop_widths = self.elastic_tabstop_widths(doc);
         let annotations = self.text_annotations(doc, None);
 
         let mut pos = visual_offset_from_anchor(
@@ -420,6 +433,7 @@ impl View {
             view_offset.anchor,
             pos,
             &text_fmt,
+            &elastic_tabstop_widths,
             &annotations,
             viewport.height as usize,
         )
@@ -435,6 +449,13 @@ impl View {
         pos.col = pos.col.saturating_sub(view_offset.horizontal_offset);
 
         Some(pos)
+    }
+
+    /// Get the document's elastic tabstop widths, including the widths of all annotations.
+    pub fn elastic_tabstop_widths(&self, doc: &Document) -> ElasticTabstopWidths {
+        log::debug!("elastic tabstop widths queried!");
+
+        doc.elastic_tabstop_widths.clone()
     }
 
     /// Get the text annotations to display in the current view for the given document and theme.
@@ -510,6 +531,7 @@ impl View {
         row: u16,
         column: u16,
         fmt: TextFormat,
+        elastic_tabstop_widths: &ElasticTabstopWidths,
         annotations: &TextAnnotations,
         ignore_virtual_text: bool,
     ) -> Option<usize> {
@@ -528,6 +550,7 @@ impl View {
             row - inner.y,
             column - inner.x,
             fmt,
+            elastic_tabstop_widths,
             annotations,
             ignore_virtual_text,
         )
@@ -539,6 +562,7 @@ impl View {
         row: u16,
         column: u16,
         text_fmt: TextFormat,
+        elastic_tabstop_widths: &ElasticTabstopWidths,
         annotations: &TextAnnotations,
         ignore_virtual_text: bool,
     ) -> Option<usize> {
@@ -554,6 +578,7 @@ impl View {
             text_row as isize,
             text_col,
             &text_fmt,
+            elastic_tabstop_widths,
             annotations,
         );
 
@@ -578,6 +603,7 @@ impl View {
             row,
             column,
             doc.text_format(self.inner_width(doc), None),
+            &self.elastic_tabstop_widths(doc),
             &self.text_annotations(doc, None),
             ignore_virtual_text,
         )
@@ -595,6 +621,7 @@ impl View {
             row,
             column,
             doc.text_format(self.inner_width(doc), None),
+            &self.elastic_tabstop_widths(doc),
             &self.text_annotations(doc, None),
             ignore_virtual_text,
         )

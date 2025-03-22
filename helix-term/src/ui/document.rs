@@ -1,6 +1,8 @@
 use std::cmp::min;
 
-use helix_core::doc_formatter::{DocumentFormatter, GraphemeSource, TextFormat};
+use helix_core::doc_formatter::{
+    DocumentFormatter, ElasticTabstopWidths, GraphemeSource, TextFormat,
+};
 use helix_core::graphemes::Grapheme;
 use helix_core::str_utils::char_to_byte_idx;
 use helix_core::syntax::Highlight;
@@ -89,6 +91,7 @@ pub fn render_document(
     viewport: Rect,
     doc: &Document,
     offset: ViewPosition,
+    doc_elastic_tabstop_widths: &ElasticTabstopWidths,
     doc_annotations: &TextAnnotations,
     syntax_highlight_iter: impl Iterator<Item = HighlightEvent>,
     overlay_highlight_iter: impl Iterator<Item = HighlightEvent>,
@@ -107,6 +110,7 @@ pub fn render_document(
         doc.text().slice(..),
         offset.anchor,
         &doc.text_format(viewport.width, Some(theme)),
+        doc_elastic_tabstop_widths,
         doc_annotations,
         syntax_highlight_iter,
         overlay_highlight_iter,
@@ -121,18 +125,31 @@ pub fn render_text(
     text: RopeSlice<'_>,
     anchor: usize,
     text_fmt: &TextFormat,
+    elastic_tabstop_widths: &ElasticTabstopWidths,
     text_annotations: &TextAnnotations,
     syntax_highlight_iter: impl Iterator<Item = HighlightEvent>,
     overlay_highlight_iter: impl Iterator<Item = HighlightEvent>,
     theme: &Theme,
     mut decorations: DecorationManager,
 ) {
-    let row_off = visual_offset_from_block(text, anchor, anchor, text_fmt, text_annotations)
-        .0
-        .row;
+    let row_off = visual_offset_from_block(
+        text,
+        anchor,
+        anchor,
+        text_fmt,
+        elastic_tabstop_widths,
+        text_annotations,
+    )
+    .0
+    .row;
 
-    let mut formatter =
-        DocumentFormatter::new_at_prev_checkpoint(text, text_fmt, text_annotations, anchor);
+    let mut formatter = DocumentFormatter::new_at_prev_checkpoint(
+        text,
+        text_fmt,
+        elastic_tabstop_widths,
+        text_annotations,
+        anchor,
+    );
     let mut syntax_styles = StyleIter {
         text_style: renderer.text_style,
         active_highlights: Vec::with_capacity(64),

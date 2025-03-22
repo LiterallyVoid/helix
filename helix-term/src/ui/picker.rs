@@ -41,8 +41,9 @@ use std::{
 
 use crate::ui::{Prompt, PromptEvent};
 use helix_core::{
-    char_idx_at_visual_offset, fuzzy::MATCHER, movement::Direction,
-    text_annotations::TextAnnotations, unicode::segmentation::UnicodeSegmentation, Position,
+    char_idx_at_visual_offset, doc_formatter::ElasticTabstopWidths, fuzzy::MATCHER,
+    movement::Direction, text_annotations::TextAnnotations,
+    unicode::segmentation::UnicodeSegmentation, Position,
 };
 use helix_view::{
     editor::Action,
@@ -914,6 +915,7 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
                 let middle = text.line_to_char(start_line + height / 2);
                 if height < inner.height as usize {
                     let text_fmt = doc.text_format(inner.width, None);
+                    let elastic_tabstop_widths = ElasticTabstopWidths::default();
                     let annotations = TextAnnotations::default();
                     (offset.anchor, offset.vertical_offset) = char_idx_at_visual_offset(
                         text,
@@ -922,6 +924,7 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
                         -(inner.height as isize / 2),
                         0,
                         &text_fmt,
+                        &elastic_tabstop_widths,
                         &annotations,
                     );
                     if start < offset.anchor {
@@ -976,6 +979,7 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
                 doc,
                 offset,
                 // TODO: compute text annotations asynchronously here (like inlay hints)
+                &ElasticTabstopWidths::default(),
                 &TextAnnotations::default(),
                 syntax_highlights,
                 overlay_highlights,

@@ -15,6 +15,7 @@ use crate::{
 
 use helix_core::{
     diagnostic::NumberOrString,
+    doc_formatter::ElasticTabstopWidths,
     graphemes::{next_grapheme_boundary, prev_grapheme_boundary},
     movement::Direction,
     syntax::{self, HighlightEvent},
@@ -90,6 +91,7 @@ impl EditorView {
 
         let view_offset = doc.view_offset(view.id);
 
+        let elastic_tabstop_widths = view.elastic_tabstop_widths(doc);
         let text_annotations = view.text_annotations(doc, Some(theme));
         let mut decorations = DecorationManager::default();
 
@@ -98,7 +100,15 @@ impl EditorView {
         }
 
         if is_focused && config.cursorcolumn {
-            Self::highlight_cursorcolumn(doc, view, surface, theme, inner, &text_annotations);
+            Self::highlight_cursorcolumn(
+                doc,
+                view,
+                surface,
+                theme,
+                inner,
+                &elastic_tabstop_widths,
+                &text_annotations,
+            );
         }
 
         // Set DAP highlights, if needed.
@@ -206,6 +216,7 @@ impl EditorView {
             inner,
             doc,
             view_offset,
+            &elastic_tabstop_widths,
             &text_annotations,
             syntax_highlights,
             overlay_highlights,
@@ -828,6 +839,7 @@ impl EditorView {
         surface: &mut Surface,
         theme: &Theme,
         viewport: Rect,
+        elastic_tabstop_widths: &ElasticTabstopWidths,
         text_annotations: &TextAnnotations,
     ) {
         let text = doc.text().slice(..);
@@ -853,8 +865,15 @@ impl EditorView {
             let is_primary = primary == *range;
             let cursor = range.cursor(text);
 
-            let Position { col, .. } =
-                visual_offset_from_block(text, cursor, cursor, &text_format, text_annotations).0;
+            let Position { col, .. } = visual_offset_from_block(
+                text,
+                cursor,
+                cursor,
+                &text_format,
+                elastic_tabstop_widths,
+                text_annotations,
+            )
+            .0;
 
             // if the cursor is horizontally in the view
             if col >= view_offset.horizontal_offset

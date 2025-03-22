@@ -6,7 +6,7 @@ use tree_sitter::{Node, QueryCursor};
 use crate::{
     char_idx_at_visual_offset,
     chars::{categorize_char, char_is_line_ending, CharCategory},
-    doc_formatter::TextFormat,
+    doc_formatter::{ElasticTabstopWidths, TextFormat},
     graphemes::{
         next_grapheme_boundary, nth_next_grapheme_boundary, nth_prev_grapheme_boundary,
         prev_grapheme_boundary,
@@ -39,6 +39,7 @@ pub fn move_horizontally(
     behaviour: Movement,
     _: &TextFormat,
     _: &mut TextAnnotations,
+    _: &ElasticTabstopWidths,
 ) -> Range {
     let pos = range.cursor(slice);
 
@@ -60,15 +61,32 @@ pub fn move_vertically_visual(
     behaviour: Movement,
     text_fmt: &TextFormat,
     annotations: &mut TextAnnotations,
+    elastic_tabstop_widths: &ElasticTabstopWidths,
 ) -> Range {
     if !text_fmt.soft_wrap {
-        return move_vertically(slice, range, dir, count, behaviour, text_fmt, annotations);
+        return move_vertically(
+            slice,
+            range,
+            dir,
+            count,
+            behaviour,
+            text_fmt,
+            annotations,
+            elastic_tabstop_widths,
+        );
     }
     annotations.clear_line_annotations();
     let pos = range.cursor(slice);
 
     // Compute the current position's 2d coordinates.
-    let (visual_pos, block_off) = visual_offset_from_block(slice, pos, pos, text_fmt, annotations);
+    let (visual_pos, block_off) = visual_offset_from_block(
+        slice,
+        pos,
+        pos,
+        text_fmt,
+        elastic_tabstop_widths,
+        annotations,
+    );
     let new_col = range
         .old_visual_position
         .map_or(visual_pos.col as u32, |(_, col)| col);
@@ -87,6 +105,7 @@ pub fn move_vertically_visual(
         row_off,
         new_col as usize,
         text_fmt,
+        elastic_tabstop_widths,
         annotations,
     );
     if dir == Direction::Forward {
@@ -111,6 +130,7 @@ pub fn move_vertically(
     behaviour: Movement,
     text_fmt: &TextFormat,
     annotations: &mut TextAnnotations,
+    elastic_tabstop_widths: &ElasticTabstopWidths,
 ) -> Range {
     annotations.clear_line_annotations();
     let pos = range.cursor(slice);
@@ -118,7 +138,15 @@ pub fn move_vertically(
     let line_start = slice.line_to_char(line_idx);
 
     // Compute the current position's 2d coordinates.
-    let visual_pos = visual_offset_from_block(slice, line_start, pos, text_fmt, annotations).0;
+    let visual_pos = visual_offset_from_block(
+        slice,
+        line_start,
+        pos,
+        text_fmt,
+        elastic_tabstop_widths,
+        annotations,
+    )
+    .0;
     let (mut new_row, new_col) = range
         .old_visual_position
         .map_or((visual_pos.row as u32, visual_pos.col as u32), |pos| pos);
@@ -152,6 +180,7 @@ pub fn move_vertically(
         new_row as usize,
         new_col as usize,
         text_fmt,
+        elastic_tabstop_widths,
         annotations,
     );
 

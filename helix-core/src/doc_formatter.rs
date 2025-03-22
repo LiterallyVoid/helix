@@ -173,6 +173,7 @@ impl Default for TextFormat {
 #[derive(Debug)]
 pub struct DocumentFormatter<'t> {
     text_fmt: &'t TextFormat,
+    elastic_tabstop_widths: &'t ElasticTabstopWidths,
     annotations: &'t TextAnnotations<'t>,
 
     /// The visual position at the end of the last yielded word boundary
@@ -198,6 +199,47 @@ pub struct DocumentFormatter<'t> {
     word_buf: Vec<GraphemeWithSource<'t>>,
     /// The index of the next grapheme that will be yielded from the `word_buf`
     word_i: usize,
+
+    row: usize,
+    elastic_tabstop: usize,
+    columns_since_elastic_tabstop: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct ElasticTabstopGroupId {
+    pub depth: usize,
+    pub rows: std::ops::Range<usize>,
+}
+
+impl PartialOrd for ElasticTabstopGroupId {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        match self.depth.cmp(&other.depth) {
+            Ordering::Less => return Some(Ordering::Less),
+            Ordering::Greater => return Some(Ordering::Greater),
+            Ordering::Equal => {}
+        }
+
+        if self.rows.end <= other.rows.start {
+            return Some(Ordering::Less);
+        } else if self.rows.start >= other.rows.end {
+            return Some(Ordering::Greater);
+        } else if self.rows == other.rows {
+            return Some(Ordering::Equal);
+        } else {
+            return None;
+        }
+    }
+}
+
+impl PartialEq for ElasticTabstopGroupId {
+    fn eq(&self, other: &Self) -> bool {
+        self.partial_cmp(other) == Some(Ordering::Equal)
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ElasticTabstopWidths {
+    pub groups: Vec<(ElasticTabstopGroupId, usize)>,
 }
 
 impl<'t> DocumentFormatter<'t> {
@@ -209,6 +251,7 @@ impl<'t> DocumentFormatter<'t> {
     pub fn new_at_prev_checkpoint(
         text: RopeSlice<'t>,
         text_fmt: &'t TextFormat,
+        elastic_tabstop_widths: &'t ElasticTabstopWidths,
         annotations: &'t TextAnnotations,
         char_idx: usize,
     ) -> Self {
@@ -219,6 +262,7 @@ impl<'t> DocumentFormatter<'t> {
 
         DocumentFormatter {
             text_fmt,
+            elastic_tabstop_widths,
             annotations,
             visual_pos: Position { row: 0, col: 0 },
             graphemes: text.slice(block_char_idx..).graphemes(),
@@ -230,6 +274,9 @@ impl<'t> DocumentFormatter<'t> {
             word_i: 0,
             line_pos: block_line_idx,
             inline_annotation_graphemes: None,
+            row: block_line_idx,
+            elastic_tabstop: 0,
+            columns_since_elastic_tabstop: 0,
         }
     }
 
@@ -286,7 +333,48 @@ impl<'t> DocumentFormatter<'t> {
                 });
             };
 
-        let grapheme = GraphemeWithSource::new(grapheme, col, self.text_fmt.tab_width, source);
+        let mut grapheme = GraphemeWithSource::new(grapheme, col, self.text_fmt.tab_width, source);
+        grapheme.grapheme = match grapheme.grapheme {
+            Grapheme::Tab { width: _ } => {
+                let row = self.row;
+                let width = 1;
+                let group_width = self
+                    .elastic_tabstop_widths
+                    .groups
+                    .binary_search_by(|&(ref group_id, _)| {
+                        if self.elastic_tabstop < group_id.depth {
+                            Ordering::Less
+                        } else if self.elastic_tabstop > group_id.depth {
+                            Ordering::Greater
+                        } else if row < group_id.rows.start {
+                            Ordering::Less
+                        } else if row >= group_id.rows.end {
+                            Ordering::Greater
+                        } else {
+                            Ordering::Equal
+                        }
+                    })
+                    .map(|index| self.elastic_tabstop_widths.groups[index].1)
+                    .unwrap_or(0);
+                let group_width = group_width.max(self.text_fmt.tab_width as usize - 1);
+                let width = group_width - self.columns_since_elastic_tabstop + 1;
+
+                self.elastic_tabstop += 1;
+                self.columns_since_elastic_tabstop = 0;
+                Grapheme::Tab { width }
+            }
+            Grapheme::Newline => {
+                self.row += 1;
+
+                self.elastic_tabstop = 0;
+                self.columns_since_elastic_tabstop = 0;
+                Grapheme::Newline
+            }
+            other => {
+                self.columns_since_elastic_tabstop += other.width();
+                other
+            }
+        };
 
         Some(grapheme)
     }

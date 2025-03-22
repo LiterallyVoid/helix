@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use helix_core::diagnostic::Severity;
-use helix_core::doc_formatter::{DocumentFormatter, FormattedGrapheme};
+use helix_core::doc_formatter::{DocumentFormatter, ElasticTabstopWidths, FormattedGrapheme};
 use helix_core::graphemes::Grapheme;
 use helix_core::text_annotations::TextAnnotations;
 use helix_core::{Diagnostic, Position};
@@ -137,10 +137,12 @@ impl Renderer<'_, '_> {
 
         let text_col = col + self.config.prefix_len + 1;
         let text_fmt = self.config.text_fmt(text_col, self.renderer.viewport.width);
+        let elastic_tabstop_widths = ElasticTabstopWidths::default();
         let annotations = TextAnnotations::default();
         let formatter = DocumentFormatter::new_at_prev_checkpoint(
             diag.message.as_str().trim().into(),
             &text_fmt,
+            &elastic_tabstop_widths,
             &annotations,
             0,
         );

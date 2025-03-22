@@ -21,7 +21,7 @@ use helix_core::{
     char_idx_at_visual_offset,
     chars::char_is_word,
     command_line, comment,
-    doc_formatter::TextFormat,
+    doc_formatter::{ElasticTabstopWidths, TextFormat},
     encoding, find_workspace,
     graphemes::{self, next_grapheme_boundary},
     history::UndoKind,
@@ -703,8 +703,16 @@ impl PartialEq for MappableCommand {
 
 fn no_op(_cx: &mut Context) {}
 
-type MoveFn =
-    fn(RopeSlice, Range, Direction, usize, Movement, &TextFormat, &mut TextAnnotations) -> Range;
+type MoveFn = fn(
+    RopeSlice,
+    Range,
+    Direction,
+    usize,
+    Movement,
+    &TextFormat,
+    &mut TextAnnotations,
+    &ElasticTabstopWidths,
+) -> Range;
 
 fn move_impl(cx: &mut Context, move_fn: MoveFn, dir: Direction, behaviour: Movement) {
     let count = cx.count();
@@ -712,6 +720,7 @@ fn move_impl(cx: &mut Context, move_fn: MoveFn, dir: Direction, behaviour: Movem
     let text = doc.text().slice(..);
     let text_fmt = doc.text_format(view.inner_area(doc).width, None);
     let mut annotations = view.text_annotations(doc, None);
+    let elastic_tabstop_widths = view.elastic_tabstop_widths(doc);
 
     let selection = doc.selection(view.id).clone().transform(|range| {
         move_fn(
@@ -722,6 +731,7 @@ fn move_impl(cx: &mut Context, move_fn: MoveFn, dir: Direction, behaviour: Movem
             behaviour,
             &text_fmt,
             &mut annotations,
+            &elastic_tabstop_widths,
         )
     });
     drop(annotations);
@@ -1813,11 +1823,13 @@ pub fn scroll(cx: &mut Context, offset: usize, direction: Direction, sync_cursor
         0,
         &text_fmt,
         // &annotations,
+        &view.elastic_tabstop_widths(doc),
         &view.text_annotations(&*doc, None),
     );
     doc.set_view_offset(view.id, view_offset);
 
     let doc_text = doc.text().slice(..);
+    let elastic_tabstop_widths = view.elastic_tabstop_widths(doc);
     let mut annotations = view.text_annotations(&*doc, None);
 
     if sync_cursor {
@@ -1838,6 +1850,7 @@ pub fn scroll(cx: &mut Context, offset: usize, direction: Direction, sync_cursor
                 movement,
                 &text_fmt,
                 &mut annotations,
+                &elastic_tabstop_widths,
             )
         });
         drop(annotations);
@@ -1857,6 +1870,7 @@ pub fn scroll(cx: &mut Context, offset: usize, direction: Direction, sync_cursor
                 (view_offset.vertical_offset + scrolloff) as isize,
                 0,
                 &text_fmt,
+                &elastic_tabstop_widths,
                 &annotations,
             );
             head += (off != 0) as usize;
@@ -1871,6 +1885,7 @@ pub fn scroll(cx: &mut Context, offset: usize, direction: Direction, sync_cursor
                 (view_offset.vertical_offset + height - scrolloff - 1) as isize,
                 0,
                 &text_fmt,
+                &elastic_tabstop_widths,
                 &annotations,
             )
             .0;
@@ -5703,6 +5718,7 @@ fn align_view_middle(cx: &mut Context) {
         doc.view_offset(view.id).anchor,
         pos,
         &text_fmt,
+        &view.elastic_tabstop_widths(doc),
         &view.text_annotations(doc, None),
     )
     .0;
