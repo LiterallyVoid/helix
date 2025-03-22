@@ -1485,9 +1485,8 @@ impl Document {
         complete_groups.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
         log::warn!(
-            "elastic tabstops calculated ({} groups {:#?})",
+            "elastic tabstops calculated ({} groups)",
             complete_groups.len(),
-            complete_groups
         );
 
         self.elastic_tabstop_widths = ElasticTabstopWidths {
