@@ -307,7 +307,7 @@ impl<'a> TextRenderer<'a> {
             characters: ws_chars,
         } = &editor_config.whitespace;
 
-        let tab_width = doc.tab_width();
+        let tab_width = 256; // doc.tab_width();
         let tab = if ws_render.tab() == WhitespaceRenderValue::All {
             std::iter::once(ws_chars.tab)
                 .chain(std::iter::repeat(ws_chars.tabpad).take(tab_width - 1))
