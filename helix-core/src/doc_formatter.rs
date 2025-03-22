@@ -337,7 +337,6 @@ impl<'t> DocumentFormatter<'t> {
         grapheme.grapheme = match grapheme.grapheme {
             Grapheme::Tab { width: _ } => {
                 let row = self.row;
-                let width = 1;
                 let group_width = self
                     .elastic_tabstop_widths
                     .groups
@@ -357,7 +356,9 @@ impl<'t> DocumentFormatter<'t> {
                     .map(|index| self.elastic_tabstop_widths.groups[index].1)
                     .unwrap_or(0);
                 let group_width = group_width.max(self.text_fmt.tab_width as usize - 1);
-                let width = group_width - self.columns_since_elastic_tabstop + 1;
+                let width = group_width as i32 - self.columns_since_elastic_tabstop as i32 + 1;
+                let width = group_width + 1;
+                let width = width.max(1) as usize;
 
                 self.elastic_tabstop += 1;
                 self.columns_since_elastic_tabstop = 0;
