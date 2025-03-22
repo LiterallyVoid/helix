@@ -341,13 +341,13 @@ impl<'t> DocumentFormatter<'t> {
                     .elastic_tabstop_widths
                     .groups
                     .binary_search_by(|&(ref group_id, _)| {
-                        if self.elastic_tabstop < group_id.depth {
+                        if group_id.depth < self.elastic_tabstop {
                             Ordering::Less
-                        } else if self.elastic_tabstop > group_id.depth {
+                        } else if group_id.depth > self.elastic_tabstop {
                             Ordering::Greater
-                        } else if row < group_id.rows.start {
+                        } else if group_id.rows.end <= row {
                             Ordering::Less
-                        } else if row >= group_id.rows.end {
+                        } else if group_id.rows.start > row {
                             Ordering::Greater
                         } else {
                             Ordering::Equal
@@ -357,7 +357,7 @@ impl<'t> DocumentFormatter<'t> {
                     .unwrap_or(0);
                 let group_width = group_width.max(self.text_fmt.tab_width as usize - 1);
                 let width = group_width as i32 - self.columns_since_elastic_tabstop as i32 + 1;
-                let width = group_width + 1;
+                // let width = group_width + 1;
                 let width = width.max(1) as usize;
 
                 self.elastic_tabstop += 1;

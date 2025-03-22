@@ -1447,7 +1447,7 @@ impl Document {
 
         let mut row = 0;
         for grapheme in self.text().slice(..).graphemes() {
-            if grapheme == "\t" || grapheme == "\n" {
+            if grapheme == "\t" {
                 if stack.len() <= tabstop {
                     stack.push((
                         ElasticTabstopGroupId {
